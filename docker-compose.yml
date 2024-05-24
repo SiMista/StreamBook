@@ -1,0 +1,92 @@
+version: '3.8'
+
+services:
+  oracle-europe:
+    image: container-registry.oracle.com/database/enterprise:21.3.0.0
+    container_name: oracle-europe
+    ports:
+      - "1521:1521"
+    environment:
+      - ORACLE_PWD=Oradoc_db1
+    volumes:
+      - oracle-europe-data:/opt/oracle/oradata
+      - ./init-scripts:/docker-entrypoint-initdb.d
+    networks:
+      - oracle-cluster
+
+  oracle-asia:
+    image: container-registry.oracle.com/database/enterprise:21.3.0.0
+    container_name: oracle-asia
+    ports:
+      - "1522:1521"
+    environment:
+      - ORACLE_PWD=Oradoc_db1
+    volumes:
+      - oracle-asia-data:/opt/oracle/oradata
+      - ./init-scripts:/docker-entrypoint-initdb.d
+    networks:
+      - oracle-cluster
+
+  manager:
+    image: "citusdata/membership-manager:0.3.0"
+    volumes:
+      - "${DOCKER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock"
+    depends_on: 
+      - oracle-europe
+      - oracle-asia
+    environment:
+      - CITUS_HOST=manager
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - PGUSER=postgres
+      - PGPASSWORD=postgres
+      - POSTGRES_HOST_AUTH_METHOD=${POSTGRES_HOST_AUTH_METHOD:-trust}
+    networks:
+      - oracle-cluster
+
+  worker-1:
+    image: "citusdata/citus:12.1.3"
+    labels: ["com.citusdata.role=Worker"]
+    depends_on: 
+      - manager
+    environment:
+      - CITUS_HOST=worker-1
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - PGUSER=postgres
+      - PGPASSWORD=postgres
+      - POSTGRES_HOST_AUTH_METHOD=${POSTGRES_HOST_AUTH_METHOD:-trust}
+    command: "/wait-for-manager.sh"
+    volumes:
+      - healthcheck-one:/healthcheck
+    networks:
+      - oracle-cluster
+
+  worker-2:
+    image: "citusdata/citus:12.1.3"
+    labels: ["com.citusdata.role=Worker"]
+    depends_on: 
+      - manager
+    environment:
+      - CITUS_HOST=worker-2
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - PGUSER=postgres
+      - PGPASSWORD=postgres
+      - POSTGRES_HOST_AUTH_METHOD=${POSTGRES_HOST_AUTH_METHOD:-trust}
+    command: "/wait-for-manager.sh"
+    volumes:
+      - healthcheck-one:/healthcheck
+    networks:
+      - oracle-cluster
+
+volumes:
+  oracle-europe-data:
+    driver: local
+  oracle-asia-data:
+    driver: local
+  healthcheck-one:
+
+networks:
+  oracle-cluster:
+    driver: bridge
